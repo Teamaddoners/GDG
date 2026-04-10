@@ -1,6 +1,7 @@
 "use client";
 
 import { motion } from "framer-motion";
+import Image from "next/image";
 import { z } from "zod";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -208,7 +209,16 @@ export default function Home() {
               }}
               className="w-full rounded-lg bg-white/10 p-2 text-sm"
             />
-            {upload && <img src={upload} alt="preview" className="h-24 w-24 rounded-lg object-cover" />}
+            {upload && (
+              <Image
+                src={upload}
+                alt="preview"
+                width={96}
+                height={96}
+                unoptimized
+                className="h-24 w-24 rounded-lg object-cover"
+              />
+            )}
             <button disabled={isVerifying} className="w-full rounded-lg bg-emerald-400 py-3 font-semibold text-black disabled:opacity-50">
               {isVerifying ? "AI verifying..." : "Submit for verification"}
             </button>
