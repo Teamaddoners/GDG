@@ -5,10 +5,41 @@
 body {
   background: radial-gradient(circle at top, #0f2e1e, #050906 55%);
   color: white;
+  min-height: 100vh;
 }
 
 .glass {
-  background: rgba(255, 255, 255, 0.06);
-  border: 1px solid rgba(255, 255, 255, 0.15);
-  backdrop-filter: blur(10px);
+  background: linear-gradient(
+    145deg,
+    rgba(255, 255, 255, 0.09),
+    rgba(255, 255, 255, 0.04)
+  );
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  backdrop-filter: blur(12px);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.22);
+}
+
+.eco-border {
+  border: 1px solid rgba(0, 245, 155, 0.38);
+}
+
+.text-gradient {
+  background: linear-gradient(90deg, #7dffd0 0%, #1eff9e 52%, #00d9ff 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+.scrollbar-thin {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(125, 255, 208, 0.4) transparent;
+}
+
+.scrollbar-thin::-webkit-scrollbar {
+  width: 8px;
+}
+
+.scrollbar-thin::-webkit-scrollbar-thumb {
+  background: rgba(125, 255, 208, 0.4);
+  border-radius: 999px;
 }

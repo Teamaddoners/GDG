@@ -29,16 +29,26 @@ const withdrawalSchema = z.object({
   amount: z.coerce.number().positive()
 });
 
+const prettyDate = (iso: string) =>
+  new Date(iso).toLocaleString("en-IN", {
+    day: "2-digit",
+    month: "short",
+    hour: "2-digit",
+    minute: "2-digit"
+  });
+
 export default function Home() {
   const [mode, setMode] = useState<"login" | "signup">("signup");
   const [tab, setTab] = useState<"dashboard" | "submit" | "leaderboard">("dashboard");
   const [upload, setUpload] = useState<string>("");
   const [isVerifying, setIsVerifying] = useState(false);
   const [showWithdraw, setShowWithdraw] = useState(false);
+  const [showWithdrawConfirm, setShowWithdrawConfirm] = useState(false);
+  const [pendingWithdrawal, setPendingWithdrawal] = useState<z.infer<typeof withdrawalSchema> | null>(null);
   const toast = useToast();
 
   const { session, signup, login, logout, getCurrentUser, updateUser, users } = useAuthStore();
-  const { createSubmission, getUserSubmissions } = useSubmissionStore();
+  const { createSubmission, getUserSubmissions, submissions } = useSubmissionStore();
   const { addCredit, requestWithdrawal, getUserTransactions } = useWalletStore();
   const me = getCurrentUser();
 
@@ -62,6 +72,13 @@ export default function Home() {
     () => [...users].sort((a, b) => b.points - a.points).slice(0, 10),
     [users]
   );
+  const totalCO2 = useMemo(
+    () => users.reduce((acc, user) => acc + user.co2SavedKg, 0).toFixed(2),
+    [users]
+  );
+  const approvedCount = mySubmissions.filter((s) => s.status === "approved").length;
+  const pendingCount = mySubmissions.filter((s) => s.status === "pending").length;
+  const rejectionCount = mySubmissions.filter((s) => s.status === "rejected").length;
 
   const onAuth = async (values: z.infer<typeof authSchema>) => {
     await delay(700);
@@ -113,29 +130,47 @@ export default function Home() {
 
   const onWithdraw = async (values: z.infer<typeof withdrawalSchema>) => {
     if (!me) return;
-    if (values.amount > me.rupees) return toast.error("Insufficient balance.");
-    updateUser(me.id, { rupees: me.rupees - values.amount });
-    requestWithdrawal(me.id, values.amount, values.upiId);
+    if (values.amount > me.rupees) {
+      toast.error("Insufficient balance.");
+      return;
+    }
+    setPendingWithdrawal(values);
+    setShowWithdrawConfirm(true);
+  };
+
+  const confirmWithdrawal = () => {
+    if (!me || !pendingWithdrawal) return;
+    updateUser(me.id, { rupees: me.rupees - pendingWithdrawal.amount });
+    requestWithdrawal(me.id, pendingWithdrawal.amount, pendingWithdrawal.upiId);
     toast.success("Withdrawal requested. Processing started.");
     setShowWithdraw(false);
+    setShowWithdrawConfirm(false);
+    setPendingWithdrawal(null);
     withdrawalForm.reset();
   };
 
   if (!session || !me) {
     return (
-      <main className="mx-auto flex min-h-screen max-w-md items-center px-4 py-10">
-        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="glass w-full rounded-2xl p-6 shadow-neon">
-          <h1 className="text-2xl font-bold">Waste-to-Wallet</h1>
-          <p className="mt-1 text-sm text-emerald-200/80">Recycle smarter. Earn instantly.</p>
+      <main className="relative mx-auto flex min-h-screen max-w-md items-center px-4 py-10">
+        <div className="pointer-events-none absolute left-0 top-0 h-44 w-44 rounded-full bg-emerald-400/15 blur-3xl" />
+        <motion.div
+          initial={{ opacity: 0, y: 14 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="glass eco-border z-10 w-full rounded-3xl p-6 shadow-neon"
+        >
+          <h1 className="text-3xl font-bold text-gradient">Waste-to-Wallet</h1>
+          <p className="mt-1 text-sm text-emerald-200/80">
+            A recycling reward wallet that feels like a real fintech app.
+          </p>
           <div className="mt-4 flex gap-2">
-            <button onClick={() => setMode("signup")} className={`rounded-lg px-3 py-1 text-sm ${mode === "signup" ? "bg-emerald-500 text-black" : "bg-white/10"}`}>Signup</button>
-            <button onClick={() => setMode("login")} className={`rounded-lg px-3 py-1 text-sm ${mode === "login" ? "bg-emerald-500 text-black" : "bg-white/10"}`}>Login</button>
+            <button onClick={() => setMode("signup")} className={`rounded-lg px-3 py-1 text-sm transition ${mode === "signup" ? "bg-emerald-500 text-black" : "bg-white/10 hover:bg-white/15"}`}>Signup</button>
+            <button onClick={() => setMode("login")} className={`rounded-lg px-3 py-1 text-sm transition ${mode === "login" ? "bg-emerald-500 text-black" : "bg-white/10 hover:bg-white/15"}`}>Login</button>
           </div>
           <form onSubmit={authForm.handleSubmit(onAuth)} className="mt-4 space-y-3">
-            {mode === "signup" && <input className="w-full rounded-lg bg-white/10 p-3" placeholder="Name" {...authForm.register("name")} />}
-            <input className="w-full rounded-lg bg-white/10 p-3" placeholder="Email" {...authForm.register("email")} />
-            <input type="password" className="w-full rounded-lg bg-white/10 p-3" placeholder="Password" {...authForm.register("password")} />
-            <button className="w-full rounded-lg bg-emerald-400 py-3 font-semibold text-black">{mode === "signup" ? "Create account" : "Sign in"}</button>
+            {mode === "signup" && <input className="w-full rounded-xl bg-white/10 p-3 outline-none ring-1 ring-transparent transition focus:ring-emerald-300" placeholder="Name" {...authForm.register("name")} />}
+            <input className="w-full rounded-xl bg-white/10 p-3 outline-none ring-1 ring-transparent transition focus:ring-emerald-300" placeholder="Email" {...authForm.register("email")} />
+            <input type="password" className="w-full rounded-xl bg-white/10 p-3 outline-none ring-1 ring-transparent transition focus:ring-emerald-300" placeholder="Password" {...authForm.register("password")} />
+            <button className="w-full rounded-xl bg-emerald-400 py-3 font-semibold text-black transition hover:bg-emerald-300">{mode === "signup" ? "Create account" : "Sign in"}</button>
           </form>
         </motion.div>
       </main>
@@ -144,17 +179,24 @@ export default function Home() {
 
   return (
     <main className="mx-auto max-w-6xl px-4 py-6">
-      <header className="glass mb-4 flex items-center justify-between rounded-2xl p-4">
+      <header className="glass eco-border mb-4 flex flex-col justify-between gap-3 rounded-2xl p-4 md:flex-row md:items-center">
         <div>
           <h2 className="text-xl font-semibold">Hey {me.name}, welcome back</h2>
-          <p className="text-xs text-emerald-100/70">Today streak: {me.streak} | CO2 saved: {me.co2SavedKg}kg</p>
+          <p className="text-xs text-emerald-100/70">
+            Daily streak: {me.streak} days | Your CO2 impact: {me.co2SavedKg}kg
+          </p>
         </div>
-        <button className="rounded-lg bg-white/10 px-3 py-2 text-sm" onClick={logout}>Logout</button>
+        <div className="flex items-center gap-2">
+          <span className="rounded-full bg-emerald-400/20 px-3 py-1 text-xs text-emerald-200">
+            Active session
+          </span>
+          <button className="rounded-lg bg-white/10 px-3 py-2 text-sm transition hover:bg-white/20" onClick={logout}>Logout</button>
+        </div>
       </header>
 
       <div className="mb-4 flex gap-2">
         {(["dashboard", "submit", "leaderboard"] as const).map((item) => (
-          <button key={item} onClick={() => setTab(item)} className={`rounded-full px-4 py-2 text-sm ${tab === item ? "bg-emerald-400 text-black" : "bg-white/10"}`}>
+          <button key={item} onClick={() => setTab(item)} className={`rounded-full px-4 py-2 text-sm capitalize transition ${tab === item ? "bg-emerald-400 text-black" : "bg-white/10 hover:bg-white/20"}`}>
             {item}
           </button>
         ))}
@@ -164,27 +206,59 @@ export default function Home() {
         <div className="grid gap-4 md:grid-cols-3">
           <motion.div layout className="glass rounded-xl p-4">
             <p className="text-sm text-emerald-100/70">Wallet Balance</p>
-            <p className="text-3xl font-bold">₹{me.rupees}</p>
-            <p className="text-sm">Points: {me.points}</p>
-            <button onClick={() => setShowWithdraw(true)} className="mt-3 rounded-lg bg-emerald-400 px-3 py-2 text-sm font-semibold text-black">Withdraw</button>
+            <p className="text-3xl font-bold">₹{me.rupees.toFixed(2)}</p>
+            <p className="text-sm text-emerald-50/85">Points: {me.points}</p>
+            <button onClick={() => setShowWithdraw(true)} className="mt-3 rounded-lg bg-emerald-400 px-3 py-2 text-sm font-semibold text-black transition hover:bg-emerald-300">Withdraw</button>
           </motion.div>
+
+          <div className="glass rounded-xl p-4">
+            <p className="text-sm text-emerald-100/70">Community CO2 Saved</p>
+            <p className="text-3xl font-bold">{totalCO2}kg</p>
+            <p className="text-xs text-emerald-100/70">All users combined</p>
+          </div>
+
+          <div className="glass rounded-xl p-4">
+            <p className="text-sm text-emerald-100/70">Submission Outcomes</p>
+            <div className="mt-2 grid grid-cols-3 gap-2 text-center text-xs">
+              <div className="rounded-lg bg-emerald-500/20 p-2">Approved<br />{approvedCount}</div>
+              <div className="rounded-lg bg-amber-500/20 p-2">Pending<br />{pendingCount}</div>
+              <div className="rounded-lg bg-rose-500/20 p-2">Rejected<br />{rejectionCount}</div>
+            </div>
+          </motion.div>
+
           <div className="glass rounded-xl p-4 md:col-span-2">
             <p className="mb-2 text-sm text-emerald-100/70">Recent activity</p>
-            <div className="space-y-2">
+            <div className="scrollbar-thin max-h-72 space-y-2 overflow-auto pr-1">
               {myTransactions.slice(0, 5).map((tx) => (
                 <div key={tx.id} className="rounded-lg bg-white/5 p-3 text-sm">
-                  {tx.description} - ₹{tx.amount} ({tx.status})
+                  <div className="flex items-center justify-between gap-2">
+                    <span>{tx.description}</span>
+                    <span className={`rounded-full px-2 py-0.5 text-xs ${tx.status === "processing" ? "bg-amber-500/20 text-amber-200" : "bg-emerald-500/20 text-emerald-200"}`}>
+                      {tx.status}
+                    </span>
+                  </div>
+                  <div className="mt-1 text-xs text-emerald-100/70">
+                    ₹{tx.amount} • {prettyDate(tx.createdAt)}
+                  </div>
                 </div>
               ))}
-              {myTransactions.length === 0 && <div className="animate-pulse rounded-lg bg-white/5 p-3 text-sm">No activity yet.</div>}
+              {myTransactions.length === 0 && <div className="animate-pulse rounded-lg bg-white/5 p-3 text-sm">No wallet activity yet.</div>}
             </div>
           </div>
+
           <div className="glass rounded-xl p-4 md:col-span-3">
             <p className="mb-2 text-sm text-emerald-100/70">Nearby recycling center</p>
-            <div className="h-36 rounded-lg bg-gradient-to-r from-emerald-600/20 to-cyan-600/20 p-3 text-sm">
-              EcoDrop Hub - 1.2km | GreenLoop Center - 2.8km
+            <div className="h-36 rounded-lg bg-gradient-to-r from-emerald-600/20 via-cyan-600/20 to-fuchsia-600/15 p-3 text-sm">
+              <p>EcoDrop Hub - 1.2km</p>
+              <p>GreenLoop Center - 2.8km</p>
+              <p>Metro E-Waste Unit - 3.1km</p>
             </div>
-            <button className="mt-3 rounded-lg bg-white/10 px-3 py-2 text-sm">Simulate QR Scan</button>
+            <button
+              onClick={() => toast.success("QR scanned. Linking to nearest center...")}
+              className="mt-3 rounded-lg bg-white/10 px-3 py-2 text-sm transition hover:bg-white/20"
+            >
+              Simulate QR Scan
+            </button>
           </div>
         </div>
       )}
@@ -192,6 +266,9 @@ export default function Home() {
       {tab === "submit" && (
         <div className="grid gap-4 md:grid-cols-2">
           <form onSubmit={submitForm.handleSubmit(onSubmitWaste)} className="glass space-y-3 rounded-xl p-4">
+            <p className="text-sm text-emerald-100/80">
+              Upload clear image for faster approval. Plastic has higher auto-approval probability.
+            </p>
             <select className="w-full rounded-lg bg-white/10 p-3" {...submitForm.register("category")}>
               {WASTE_CATEGORIES.map((item) => (
                 <option value={item} key={item} className="bg-black">{item}</option>
@@ -210,27 +287,47 @@ export default function Home() {
               className="w-full rounded-lg bg-white/10 p-2 text-sm"
             />
             {upload && (
-              <Image
-                src={upload}
-                alt="preview"
-                width={96}
-                height={96}
-                unoptimized
-                className="h-24 w-24 rounded-lg object-cover"
-              />
+              <div className="rounded-xl border border-emerald-300/30 p-2">
+                <Image
+                  src={upload}
+                  alt="preview"
+                  width={120}
+                  height={120}
+                  unoptimized
+                  className="h-28 w-28 rounded-lg object-cover"
+                />
+              </div>
             )}
             <button disabled={isVerifying} className="w-full rounded-lg bg-emerald-400 py-3 font-semibold text-black disabled:opacity-50">
               {isVerifying ? "AI verifying..." : "Submit for verification"}
             </button>
+            {isVerifying && (
+              <div className="animate-pulse rounded-lg bg-white/5 p-3 text-xs text-emerald-100/80">
+                Running AI quality checks and confidence scoring...
+              </div>
+            )}
           </form>
           <div className="glass rounded-xl p-4">
             <p className="mb-2 text-sm text-emerald-100/70">Submission history</p>
-            <div className="space-y-2">
+            <div className="scrollbar-thin max-h-[25rem] space-y-2 overflow-auto pr-1">
               {mySubmissions.slice(0, 6).map((s) => (
                 <div key={s.id} className="rounded-lg bg-white/5 p-3 text-sm">
-                  {s.category} - {s.status} - {s.confidence ?? 0}% - ₹{s.reward}
+                  <div className="flex items-center justify-between">
+                    <span className="font-medium capitalize">{s.category}</span>
+                    <span className={`rounded-full px-2 py-0.5 text-xs ${s.status === "approved" ? "bg-emerald-500/20 text-emerald-200" : s.status === "pending" ? "bg-amber-500/20 text-amber-200" : "bg-rose-500/20 text-rose-200"}`}>
+                      {s.status}
+                    </span>
+                  </div>
+                  <div className="mt-1 text-xs text-emerald-100/75">
+                    Confidence: {s.confidence ?? 0}% • Reward: ₹{s.reward} • {prettyDate(s.timestamp)}
+                  </div>
                 </div>
               ))}
+              {mySubmissions.length === 0 && (
+                <div className="rounded-lg bg-white/5 p-3 text-sm text-emerald-100/75">
+                  No submissions yet. Upload your first recyclable item.
+                </div>
+              )}
             </div>
           </div>
         </div>
@@ -243,9 +340,17 @@ export default function Home() {
             {leaderboard.map((u, i) => (
               <div key={u.id} className="flex items-center justify-between rounded-lg bg-white/5 p-3 text-sm">
                 <span>#{i + 1} {u.name}</span>
-                <span>{u.points} pts {u.points > 300 ? "🔥 Eco Warrior" : u.points > 120 ? "♻️ Pro Recycler" : ""}</span>
+                <span>
+                  {u.points} pts{" "}
+                  {u.points > 300 ? "🔥 Eco Warrior" : u.points > 120 ? "♻️ Pro Recycler" : "🌱 Starter"}
+                </span>
               </div>
             ))}
+            {submissions.length === 0 && (
+              <div className="rounded-lg bg-white/5 p-3 text-sm">
+                Leaderboard will become competitive after first approved submissions.
+              </div>
+            )}
           </div>
         </div>
       )}
@@ -261,6 +366,31 @@ export default function Home() {
               <button className="w-full rounded-lg bg-emerald-400 py-2 font-semibold text-black">Confirm</button>
             </div>
           </form>
+        </div>
+      )}
+
+      {showWithdrawConfirm && pendingWithdrawal && (
+        <div className="fixed inset-0 z-50 grid place-items-center bg-black/80 p-4">
+          <div className="glass w-full max-w-md rounded-xl p-4">
+            <h4 className="text-lg font-semibold">Confirm withdrawal</h4>
+            <p className="mt-1 text-sm text-emerald-100/80">
+              Send ₹{pendingWithdrawal.amount} to {pendingWithdrawal.upiId}? Balance will be deducted instantly.
+            </p>
+            <div className="mt-4 flex gap-2">
+              <button
+                onClick={() => {
+                  setShowWithdrawConfirm(false);
+                  setPendingWithdrawal(null);
+                }}
+                className="w-full rounded-lg bg-white/10 py-2"
+              >
+                Go back
+              </button>
+              <button onClick={confirmWithdrawal} className="w-full rounded-lg bg-emerald-400 py-2 font-semibold text-black">
+                Yes, proceed
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </main>
